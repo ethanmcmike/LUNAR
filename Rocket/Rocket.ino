@@ -1,22 +1,25 @@
+#include <Adafruit_GPS.h>
 #include <LoRa.h>
 #include <SD.h>
 #include <Servo.h>
 #include <SoftwareSerial.h>
 #include <SPI.h>
-#include <TinyGPS++.h>
 
-#define PIN_ALTIMETER 4
-#define PIN_GPS_TX    3
-#define PIN_GPS_RX    5
-#define PIN_LORA_TX   0
-#define PIN_LORA_RX   1
-#define PIN_SD        7
-#define PIN_DROGUE    8
-#define PIN_CHUTE     9
+#define PIN_ALTIMETER   A5
+#define PIN_GPS_RX      7
+#define PIN_GPS_TX      8
+#define PIN_LORA_RX     1
+#define PIN_LORA_TX     0
+#define PIN_LORA_SS     2
+#define PIN_LORA_RST    10
+#define PIN_LORA_DI     11
+#define PIN_SD          7
+#define PIN_DROGUE      5
+#define PIN_CHUTE       6
 
-TinyGPSPlus gpsParser;
-SoftwareSerial gps(PIN_GPS_RX, PIN_GPS_TX);
 SoftwareSerial lora(PIN_LORA_RX, PIN_LORA_TX);
+SoftwareSerial gpsSerial(PIN_GPS_RX, PIN_GPS_TX);
+Adafruit_GPS gps(&gpsSerial);
 File file;
 
 void setup() {
@@ -31,6 +34,18 @@ void setup() {
   Serial.begin(9600);
   gps.begin(115200);
   lora.begin(115200);
+
+  //Initialize gps
+  gps.begin(9600);
+  gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
+  gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);   // 1 Hz update rate
+  gps.sendCommand(PGCMD_ANTENNA);
+
+  //Initialize radio
+  LoRa.setPins(PIN_LORA_SS, PIN_LORA_RST, PIN_LORA_DI);
+  LoRa.setSPI(0);
+  LoRa.setSPIFrequency(0);
+  LoRa.begin();
 
   //Initialize SD card
   SD.begin(PIN_SD);
@@ -83,7 +98,7 @@ void loop() {
 
   //Trigger separation
   if(false){
-  
+    
   }
   
   //Trigger drogue 'chute
