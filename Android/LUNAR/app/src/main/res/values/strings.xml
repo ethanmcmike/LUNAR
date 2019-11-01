@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">LUNAR</string>
+
+    <string-array name="timeline_events">
+        <item>Liftoff</item>
+        <item>Apogee</item>
+        <item>Drogue Chute Release</item>
+        <item>Main Chute Release</item>
+        <item>Payload Deployed</item>
+        <item>Touchdown</item>
+    </string-array>
+
+    //Navigation
+    <string name="nav_raw_data">Raw Data</string>
+    <string name="nav_map">Map</string>
+    <string name="nav_log">Log</string>
+</resources>

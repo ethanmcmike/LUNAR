@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <item name="meters" type="string">m</item>
+    <item name="feet" type="string">\'</item>
+    <item name="inches" type="string">"</item>
+    <item name="degrees" type="string">°</item>
+    <item name="celcius" type="string">°C</item>
+    <item name="farenheight" type="string">°F</item>
+    <item name="north" type="string">N</item>
+    <item name="east" type="string">E</item>
+    <item name="south" type="string">S</item>
+    <item name="west" type="string">W</item>
+
+</resources>
