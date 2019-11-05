@@ -106,7 +106,7 @@ void sendData(String data){
   msg += data;
   msg += STOP;
   
-  bt.println(msg);
+  Serial.println(msg);
 }
 
 void reset(){
