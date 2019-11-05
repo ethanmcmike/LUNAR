@@ -1,5 +1,3 @@
-#include <Adafruit_GPS.h>
-#include <LoRa.h>
 #include <SD.h>
 #include <Servo.h>
 #include <SoftwareSerial.h>
@@ -16,35 +14,33 @@
 #define PIN_PAYLOAD     8
 #define PIN_ALT         A5
 
+#define START           "["
+#define STOP            "]"
+#define DEL             ","
 
-SoftwareSerial lora(PIN_LORA_RX, PIN_LORA_TX);
-SoftwareSerial gpsSerial(PIN_GPS_RX, PIN_GPS_TX);
+#define RECEIVER_ID     2
+
+SoftwareSerial gps(PIN_GPS_RX, PIN_GPS_TX);
 File file;
 
 void setup() {
 
   //Initialize pins
-  pinMode(PIN_ALTIMETER,  INPUT);
   pinMode(PIN_SD,         OUTPUT);
   pinMode(PIN_DROGUE,     OUTPUT);
+  pinMode(PIN_BODY,       OUTPUT);
   pinMode(PIN_CHUTE,      OUTPUT);
-
-  //Initialize communication
-  Serial.begin(9600);
-  gps.begin(115200);
-  lora.begin(115200);
-
-  //Initialize gps
-  gps.begin(9600);
-  gps.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
-  gps.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);   // 1 Hz update rate
-  gps.sendCommand(PGCMD_ANTENNA);
+  pinMode(PIN_PAYLOAD,    OUTPUT);
+  pinMode(PIN_ALT,        INPUT);
 
   //Initialize radio
-  LoRa.setPins(PIN_LORA_SS, PIN_LORA_RST, PIN_LORA_DI);
-  LoRa.setSPI(0);
-  LoRa.setSPIFrequency(0);
-  LoRa.begin();
+  Serial.begin(9600);
+  delay(1000);
+  Serial.println("AT+IPR=9600");
+  Serial.println("AT+PARAMETER=10,7,1,7");
+  
+  //Initialize gps
+  gps.begin(115200);
 
   //Initialize SD card
   SD.begin(PIN_SD);
@@ -53,28 +49,25 @@ void setup() {
 
 void loop() {
 
+  //Measure temperature
+  float temp = 0;
+
   //Measure altitude
   int alt = 0;
   
   //Read location
-  double lat, lon;
-  
-  gpsParser.encode(gps.read());
-
-  if(gpsParser.location.isValid()){
-    lat = gpsParser.location.lat();
-    lon = gpsParser.location.lng();
-  }
+  float lat = 0;
+  float lon = 0;
 
   //Read time
   uint8_t hour, min, sec, csec;
   
-  if(gpsParser.time.isValid()){
-    hour = gpsParser.time.hour();
-    min = gpsParser.time.minute();
-    sec = gpsParser.time.second();
-    csec = gpsParser.time.centisecond();
-  }
+//  if(gpsParser.time.isValid()){
+//    hour = gpsParser.time.hour();
+//    min = gpsParser.time.minute();
+//    sec = gpsParser.time.second();
+//    csec = gpsParser.time.centisecond();
+//  }
   
   //Store time, altitude, location on SD
   if(file){
@@ -84,29 +77,63 @@ void loop() {
     file.print(":");
     file.print(sec);
     file.print("\t");
+    file.print(temp);
+    file.print("\t");
+    file.println(alt);
+    file.print("\t");
     file.print(lat);
     file.print("\t");
     file.println(lon);
   }
 
-  //Send location over radio
-  LoRa.beginPacket();
-  LoRa.print(lat);
-  LoRa.print(lon);
-  LoRa.endPacket();
+  //Send data over radio
+  sendData(RECEIVER_ID, temp, alt, lat, lon);
+}
 
-  //Trigger separation
-  if(false){
-    
-  }
+//Sends data over radio to specified receiver
+void sendData(int receiverId, float temp, int alt, float lat, float lon){
   
-  //Trigger drogue 'chute
-  if(false){
-    
-  }
-  
-  //Trigger main 'chute
-  if(false){
-    
-  }
+  String data = START;
+  data += DEL;
+  data += String(temp, 1);
+  data += DEL;
+  data += String(alt);
+  data += DEL;
+  data += String(lat, 5);
+  data += DEL;
+  data += String(lon, 5);
+  data += STOP;
+
+  String msg = "AT+SEND=";
+  data += receiverId;
+  data += DEL;
+  data += data.length();
+  data += DEL;
+  data += data;
+
+  Serial.println(msg);
+}
+
+boolean apogee(){
+  return false;
+}
+
+//Will deploy drogue parachute
+void triggerDrogue(){
+  digitalWrite(PIN_DROGUE, HIGH);
+}
+
+//Will separate rocket into two halves
+void triggerBody(){
+  digitalWrite(PIN_BODY, HIGH);
+}
+
+//Will deploy main parachute
+void triggerMain(){
+  digitalWrite(PIN_CHUTE, HIGH);
+}
+
+//Will activate a solenoid to release payload
+void triggerPayload(){
+  digitalWrite(PIN_PAYLOAD, HIGH);
 }
