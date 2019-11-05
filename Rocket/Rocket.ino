@@ -5,21 +5,20 @@
 #include <SoftwareSerial.h>
 #include <SPI.h>
 
-#define PIN_ALTIMETER   A5
-#define PIN_GPS_RX      7
-#define PIN_GPS_TX      8
-#define PIN_LORA_RX     1
-#define PIN_LORA_TX     0
-#define PIN_LORA_SS     2
-#define PIN_LORA_RST    10
-#define PIN_LORA_DI     11
-#define PIN_SD          7
+#define PIN_LORA_RX     0
+#define PIN_LORA_TX     1
+#define PIN_GPS_TX      2
+#define PIN_GPS_RX      3
+#define PIN_SD          4
 #define PIN_DROGUE      5
-#define PIN_CHUTE       6
+#define PIN_BODY        6
+#define PIN_CHUTE       7
+#define PIN_PAYLOAD     8
+#define PIN_ALT         A5
+
 
 SoftwareSerial lora(PIN_LORA_RX, PIN_LORA_TX);
 SoftwareSerial gpsSerial(PIN_GPS_RX, PIN_GPS_TX);
-Adafruit_GPS gps(&gpsSerial);
 File file;
 
 void setup() {
