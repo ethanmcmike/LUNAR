@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">LUNAR</string>
 
+    //Timeline events
     <string-array name="timeline_events">
         <item>Liftoff</item>
         <item>Apogee</item>
@@ -10,8 +11,16 @@
         <item>Touchdown</item>
     </string-array>
 
-    //Navigation
-    <string name="nav_raw_data">Raw Data</string>
-    <string name="nav_map">Map</string>
-    <string name="nav_log">Log</string>
+    //Log event descriptions
+    <string name="log_connect">Connected to receiver</string>
+    <string name="log_disconnect">Disconnected from receiver</string>
+    <string name="log_receive">Received data from rocket</string>
+    <string name="log_send">Sent command to rocket</string>
+
+    //Commands
+    <string name="command_drogue">Drogue Parachute</string>
+    <string name="command_body">Body Split</string>
+    <string name="command_main">Main Parachute</string>
+    <string name="command_payload">Payload Release</string>
+
 </resources>

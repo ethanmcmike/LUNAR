@@ -18,25 +18,30 @@
 #define PIN_BMP_SDA     A4
 #define PIN_BMP_SCL     A5
 
-#define DEL             ';'
+#define DEL_LORA        ','
+#define DEL_LUNAR       ';'
 
 #define RECEIVER_ID     1
-#define RATE            2     //Transmissions per second [Hz]
+#define RECORD_RATE     2     //Records per second [Hz]
 
-#define COMMAND_KEY     "+RCV="
-#define COMMAND_DROGUE  0
-#define COMMAND_BODY    1
-#define COMMAND_MAIN    2
-#define COMMAND_PAYLOAD 3
-int index, delCount, dataSize;
+#define COMMAND_KEY       "+RCV="
+#define COMMAND_DROGUE    0
+#define COMMAND_BODY      1
+#define COMMAND_MAIN      2
+#define COMMAND_PAYLOAD   3
+#define COMMAND_TRANSMIT  4
+
+int index, delCountLora, delCountLunar, dataSize;
 String buffer;
 
 //File file;
 
 #define ALT_NUM         20            //Number of altimeter data points to average
 #define P0              101510.0      //Pressure at sea-level [Pa]
+
 int alt;
-long lastTransmit;
+float temp, lat, lon;
+long lastUpdate;
 
 void setup() {
 
@@ -69,7 +74,7 @@ void setup() {
 void loop() {
 
   //Measure temperature
-  float temp = bmp085Temp();
+  temp = bmp085Temp();
 
   //Measure altitude
   long p = bmp085Pressure();
@@ -77,8 +82,8 @@ void loop() {
   alt = ((ALT_NUM-1)*alt + tempAlt) / ALT_NUM;
   
   //Read location
-  float lat = 0;
-  float lon = 0;
+  lat = 0;
+  lon = 0;
 
   //Read time
   int hour = 0;
@@ -87,18 +92,15 @@ void loop() {
   int msec = 0;
   
   //Store time, altitude, location on SD
-  storeData(hour, min, sec, msec, temp, alt, lat, lon);
-
+//  long now = millis();
+//  if(now - lastTransmit > (float)1000/RATE){
+//    lastUpdate = now;
+//    storeData(hour, min, sec, msec, temp, alt, lat, lon);
+//  }
+  
   //Listen for commands over radio
   while(Serial.available()){
     receiveData();
-  }
-
-  //Send data over radio
-  long now = millis();
-  if(now - lastTransmit > (float)1000/RATE){
-    lastTransmit = now;
-    sendData(RECEIVER_ID, temp, alt, lat, lon);
   }
 }
 
@@ -123,27 +125,26 @@ void receiveData(){
   //Already received key
   else {
 
-    if(c == ','){
+    if(c == DEL_LORA){
       
-      delCount++;
+      delCountLora++;
 
       //Read transmitter id
-      if(delCount == 1){
+      if(delCountLora == 1){
 //        transmitterId = buffer.toInt();
         buffer = "";
       }
   
       //Read data size
-      if(delCount == 2){
+      if(delCountLora == 2){
         dataSize = buffer.toInt();
         buffer = "";
       }
 
       //Translate data into a command
-      if(delCount == 3){
-        
+      if(delCountLora == 3){        
         if(buffer.length() == dataSize){          
-          handleData(buffer);
+          handleData(buffer, delCountLunar+1);
           reset();
         }
         
@@ -152,10 +153,15 @@ void receiveData(){
         }
       }
     }
+
+    else if(c == DEL_LUNAR){
+      delCountLunar++;
+      buffer += c;
+    }
     
     //Add character to buffer
     else if(buffer.length() <= 256){
-      if(isDigit(c) || c == DEL || c == '.') {
+      if(isDigit(c) || c == DEL_LUNAR || c == '.') {
           buffer += c;
       }
     }
@@ -169,32 +175,67 @@ void receiveData(){
 void reset(){
   buffer = "";
   index = 0;
-  delCount = 0;
+  delCountLora = 0;
+  delCountLunar = 0;
   dataSize = 0;
-
-  digitalWrite(PIN_BODY, LOW);
 }
 
 //Will handle commands received from ground
-void handleData(String data){
+void handleData(String data, int numChunks){
 
-  int commandId = data.toInt();
+  //Split data into chunks
+  String chunks[numChunks];
 
+  int index = 0;
+  
+  for(int i=0; i<numChunks; i++){
+    
+    char c = data[index++];
+    
+    while(c != DEL_LUNAR && index <= data.length()){      
+      chunks[i] += c;
+      c = data[index++];
+    }
+  }
+
+  //First chunk is command id
+  int commandId = chunks[0].toInt();
+
+  //Execute command based on id
   switch(commandId){
+
+    case COMMAND_TRANSMIT:
+      if(numChunks == 1){
+        sendData(RECEIVER_ID, temp, alt, lat, lon);
+      }
+      break;
+    
     case COMMAND_DROGUE:
-      triggerDrogue();
+      if(numChunks == 2){
+        boolean state = chunks[1].equals("1");
+        triggerDrogue(state);
+      }
       break;
 
     case COMMAND_BODY:
-      triggerBody();
+      if(numChunks == 2){
+        boolean state = chunks[1].equals("1");
+        triggerBody(state);
+      }
       break;
 
     case COMMAND_MAIN:
-      triggerMain();
+      if(numChunks == 2){
+        boolean state = chunks[1].equals("1");
+        triggerMain(state);
+      }
       break;
 
     case COMMAND_PAYLOAD:
-      triggerPayload();
+      if(numChunks == 2){
+        boolean state = chunks[1].equals("1");
+        triggerPayload(state);
+      }
       break;
 
     default:
@@ -207,18 +248,18 @@ void sendData(int receiverId, float temp, int alt, float lat, float lon){
   
   String data;
   data += String(temp, 1);
-  data += DEL;
+  data += DEL_LUNAR;
   data += String(alt);
-  data += DEL;
+  data += DEL_LUNAR;
   data += String(lat, 5);
-  data += DEL;
+  data += DEL_LUNAR;
   data += String(lon, 5);
 
   String msg = "AT+SEND=";
   msg += receiverId;
-  msg += ',';
+  msg += DEL_LORA;
   msg += data.length();
-  msg += ',';
+  msg += DEL_LORA;
   msg += data;
 
   Serial.println(msg);
@@ -247,21 +288,21 @@ boolean apogee(){
 }
 
 //Will deploy drogue parachute
-void triggerDrogue(){
-  digitalWrite(PIN_DROGUE, HIGH);
+void triggerDrogue(boolean state){
+  digitalWrite(PIN_DROGUE, state);
 }
 
 //Will separate rocket into two halves
-void triggerBody(){
-  digitalWrite(PIN_BODY, HIGH);
+void triggerBody(boolean state){
+  digitalWrite(PIN_BODY, state);
 }
 
 //Will deploy main parachute
-void triggerMain(){
-  digitalWrite(PIN_CHUTE, HIGH);
+void triggerMain(boolean state){
+  digitalWrite(PIN_CHUTE, state);
 }
 
 //Will activate a solenoid to release payload
-void triggerPayload(){
-  digitalWrite(PIN_PAYLOAD, HIGH);
+void triggerPayload(boolean state){
+  digitalWrite(PIN_PAYLOAD, state);
 }

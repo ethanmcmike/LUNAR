@@ -1,4 +1,5 @@
 #include <SoftwareSerial.h>
+//#include <Parser.h>
 
 #define LORA_TX     0
 #define LORA_RX     1
@@ -8,17 +9,31 @@
 #define KEY         "+RCV="
 #define START       '['
 #define STOP        ']'
-#define DEL         ';'
+#define DEL_LORA    ','
+#define DEL_LUNAR   ';'
+
+#define COMMAND_DROGUE    0
+#define COMMAND_BODY      1
+#define COMMAND_MAIN      2
+#define COMMAND_PAYLOAD   3
+#define COMMAND_PING      4
+
+#define ROCKET_ID   2
+#define PING_RATE   2   //Rate to request data from rocket [Hz]
+long lastUpdate;
 
 SoftwareSerial bt(BT_TX, BT_RX);
 
 int index, delCount, transmitterId, dataSize;
 String buffer;
 
+String bufferBT;
+int indexBT;
+
 void setup() {
   
   Serial.begin(9600);
-  bt.begin(115200);
+  bt.begin(9600);
 
   //Initialize LoRa
   delay(1000);
@@ -27,14 +42,27 @@ void setup() {
 }
 
 void loop() {
+
+  //Receive data from rocket
   if(Serial.available()){
-    parseData(Serial.read());
+    parseRocket(Serial.read());
   }
+
+  //Receive command from Android
+  if(bt.available()){
+    parseBT(bt.read());
+  }
+
+//  long now = millis();
+//  if(now - lastUpdate >= (float)3000){
+//    lastUpdate = now;
+//    sendRocket("4");
+//  }
 }
 
 //Example data: "+RCV=2,27,13.2;203;172.11451;12.21451,-99,40";
 //Passes to handle(): "13.2;203;172.11451;12.21451"
-void parseData(char c){
+void parseRocket(char c){
 
   //Validating data with key
   if(index < strlen(KEY)){
@@ -51,7 +79,7 @@ void parseData(char c){
   //Already received key
   else {
 
-    if(c == ','){
+    if(c == DEL_LORA){
       
       delCount++;
 
@@ -71,7 +99,7 @@ void parseData(char c){
       if(delCount == 3){
         
         if(buffer.length() == dataSize){
-          sendData(buffer);
+          sendBT(buffer);
           reset();
         }
         
@@ -83,7 +111,7 @@ void parseData(char c){
     
     //Add character to buffer
     else if(buffer.length() <= 256){
-      if(isDigit(c) || c == DEL || c == '.') {
+      if(isDigit(c) || c == DEL_LUNAR || c == '.') {
           buffer += c;
       }
     }
@@ -94,17 +122,47 @@ void parseData(char c){
   }
 }
 
+void parseBT(char c){
+
+  if(c == START){
+    bufferBT = "";
+  }
+
+  else if(c == STOP){
+    sendRocket(bufferBT);
+    bufferBT = "";
+  }
+
+  else if(bufferBT.length() <= 256){
+    if(isDigit(c) || c == DEL_LUNAR || c == '.'){
+      bufferBT += c;
+    }
+  }
+}
+
 //Data input format: "temp;alt;lat;lon"
 //Example data input: "13.2;203;172.11451;12.21451"
 //Data output format: "[trandmitterId;temp;alt;lat;lon]"
 //Example data output: "[2;13.2;203;172.11451;12.21451]"
-void sendData(String data){
+void sendBT(String data){
   
   String msg = String(START);
   msg += transmitterId;
-  msg += DEL;
+  msg += DEL_LUNAR;
   msg += data;
   msg += STOP;
+  
+  bt.println(msg);
+}
+
+void sendRocket(String data){
+  
+  String msg = "AT+SEND=";
+  msg += ROCKET_ID;
+  msg += DEL_LORA;
+  msg += String(data.length());
+  msg += DEL_LORA;
+  msg += data;
   
   Serial.println(msg);
 }
