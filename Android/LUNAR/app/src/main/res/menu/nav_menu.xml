@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item android:id="@+id/nav_data" android:title="Data" android:icon="@drawable/baseline_timeline_black_48dp"/>
+    <item android:id="@+id/nav_map" android:title="Map" android:icon="@drawable/baseline_my_location_black_48dp"/>
+    <item android:id="@+id/nav_timeline" android:title="Events" android:icon="@drawable/baseline_done_black_48dp"/>
+    <item android:id="@+id/nav_commands" android:title="Commands" android:icon="@drawable/baseline_send_black_48dp"/>
+    <item android:id="@+id/nav_log" android:title="Log" android:icon="@drawable/baseline_description_black_48dp"/>
+
+</menu>
