@@ -20,14 +20,16 @@
 
 #define ROCKET_ID   2
 #define PING_RATE   2   //Rate to request data from rocket [Hz]
-long lastUpdate;
+long now, lastUpdate;
+
+//Flags
+String command;
+boolean commandReady, waiting;
 
 SoftwareSerial bt(BT_TX, BT_RX);
 
 int index, delCount, transmitterId, dataSize;
-String buffer;
-
-String bufferBT;
+String buffer, bufferBT;
 int indexBT;
 
 void setup() {
@@ -38,6 +40,7 @@ void setup() {
   //Initialize LoRa
   delay(1000);
   Serial.println("AT+IPR=9600");
+  delay(1000);
   Serial.println("AT+PARAMETER=10,7,1,7");
 }
 
@@ -53,11 +56,23 @@ void loop() {
     parseBT(bt.read());
   }
 
-//  long now = millis();
-//  if(now - lastUpdate >= (float)3000){
-//    lastUpdate = now;
-//    sendRocket("4");
-//  }
+  now = millis();
+
+  //Send rocket a command
+  if(!waiting || now - lastUpdate > 2000){
+    
+    if(commandReady){
+      sendRocket(command);
+      commandReady = false;
+    }
+  
+    //Send to rocket if available and not already waiting for response
+    else if(now - lastUpdate >= (float)10){
+      lastUpdate = now;
+      waiting = true;
+      sendRocket("4");
+    }
+  }
 }
 
 //Example data: "+RCV=2,27,13.2;203;172.11451;12.21451,-99,40";
@@ -100,6 +115,7 @@ void parseRocket(char c){
         
         if(buffer.length() == dataSize){
           sendBT(buffer);
+          waiting = false;
           reset();
         }
         
@@ -129,7 +145,9 @@ void parseBT(char c){
   }
 
   else if(c == STOP){
-    sendRocket(bufferBT);
+//    sendRocket(bufferBT);
+    command = bufferBT;
+    commandReady = true;
     bufferBT = "";
   }
 
