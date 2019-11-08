@@ -351,6 +351,7 @@ void getLatLon(){
         int three = str.indexOf(",", two+1);
         int four = str.indexOf(",", three+1);
         int five = str.indexOf(",", four+1);
+        int six = str.indexOf(",", five+1);
         
         String Lat = str.substring(two+1, three);
         String Long = str.substring(four+1, five);
@@ -366,6 +367,16 @@ void getLatLon(){
 
         lat = LatF;
         lon = LongF;
+
+        //Detect north/south, east/west to add negative
+        String ns = str.charAt(three+1);
+        String ew = str.charAt(five+1);
+
+        if(ns == "S")
+          lat = -lat;
+
+        if(ew == "W")
+          lon = -lon;
       }
       str = "";
     }else{
