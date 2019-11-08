@@ -43,7 +43,7 @@ public class Aircraft {
     }
 
     public String getLat(){
-        return String.valueOf(lat);
+        return degToCoord(this.lat);
     }
 
     public int getLatUnit(){
@@ -51,10 +51,27 @@ public class Aircraft {
     }
 
     public String getLon(){
-        return String.valueOf(lon);
+        return degToCoord(this.lon);
     }
 
     public int getLonUnit(){
         return (lon > 0) ? R.string.east : R.string.west;
+    }
+
+    public String degToCoord(float d){
+
+        if(d < 0){
+            d = -d;
+        }
+
+        int deg = (int)d;
+        d -= deg;
+        int min = (int)(d*60);
+        d -= min/60f;
+        int sec = (int)(d*3600);
+
+        String coord = String.valueOf(deg) + '°' + String.valueOf(min) + '"' + String.valueOf(sec) + "'";
+
+        return coord;
     }
 }

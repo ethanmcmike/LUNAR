@@ -1,6 +1,5 @@
 package com.lunar.activities;
 
-import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.content.Intent;
 import android.os.Bundle;
@@ -23,12 +22,13 @@ import com.lunar.fragments.MapFragment;
 import com.lunar.interfaces.CommandHandler;
 import com.lunar.models.InputData;
 import com.lunar.utils.BTController;
-import com.lunar.utils.DataListener;
+import com.lunar.interfaces.DataListener;
 import com.lunar.views.TimelineFragment;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_BLUETOOTH = 1;
+    private static final int REQUEST_ALTIMETER = 2;
 
     private static BTController bt = new BTController();
 
@@ -54,6 +54,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main_activity);
+        setTitle(getResources().getString(R.string.activity_main));
 
         navView = findViewById(R.id.navigation_view);
         navView.setOnNavigationItemSelectedListener(navListener);
@@ -88,6 +89,19 @@ public class MainActivity extends AppCompatActivity {
 
             case R.id.bt_connect:
                 connect();
+                break;
+
+            case R.id.bt_settings:
+                Toast.makeText(this, "Settings not developed yet...", Toast.LENGTH_SHORT).show();
+                break;
+
+            case R.id.alt_settings:
+                Intent intent = new Intent(this, AltimeterActivity.class);
+                startActivityForResult(intent, REQUEST_ALTIMETER);
+                break;
+
+            case R.id.clear_path:
+                mapFragment.clearPath();
                 break;
         }
 
@@ -127,7 +141,7 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(getApplicationContext(), "Connected!", Toast.LENGTH_LONG).show();
             bt.addDataListener(new AircraftInfoReceiver());
 
-            logFragment.connect();
+            logFragment.log("Connected to bluetooth");
             timelineFragment.update(0);
         }
 
@@ -139,15 +153,25 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
 
         if (requestCode == REQUEST_BLUETOOTH) {
-            if (resultCode == Activity.RESULT_OK) {
+            if (resultCode == RESULT_OK) {
                 Toast.makeText(getApplicationContext(), "Bluetooth enabled", Toast.LENGTH_SHORT).show();
+                connect();
             } else {
                 Toast.makeText(getApplicationContext(), "Bluetooth was not enabled", Toast.LENGTH_SHORT).show();
             }
         }
+
+        else if(requestCode == REQUEST_ALTIMETER){
+            if(resultCode == RESULT_OK){
+                Toast.makeText(getApplicationContext(), "Altimeter set", Toast.LENGTH_SHORT).show();
+            }
+            else {
+                Toast.makeText(getApplicationContext(), "Altimeter could not be set", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
-    private class AircraftInfoReceiver extends DataListener {
+    private class AircraftInfoReceiver implements DataListener {
 
         char start = '[';
         char end = ']';
@@ -156,8 +180,6 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onDataReceived(byte[] data, int size) {
-
-            System.out.println("Received data");
 
             //Parse data
             for(int i=0; i<size; i++) {
@@ -173,7 +195,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 else if(buffer.length() <= 256){
 
-                    if(Character.isDigit(c) || c == del || c == '.') {
+                    if(Character.isDigit(c) || c == del || c == '.' || c == '-') {
                         buffer += c;
                     }
                 }
@@ -202,7 +224,7 @@ public class MainActivity extends AppCompatActivity {
                     public void run() {
                         dataFragment.update(inputData);
 //                        logFragment.receive();
-                        mapFragment.moveRocket(lat, lon);
+                        mapFragment.update(lat, lon);
                     }
                 });
             }
@@ -249,39 +271,39 @@ public class MainActivity extends AppCompatActivity {
             switch(stringId){
 
                 case R.string.command_drogue:
-                    System.out.println("Drogue");
                     lights[0] = !lights[0];
                     msg = "[0;";
                     msg += lights[0] ? 1:0;
                     msg += "]";
                     bt.send(msg);
+                    logFragment.log("Drogue parachute released");
                     break;
 
                 case R.string.command_body:
-                    System.out.println("Body");
                     lights[1] = !lights[1];
                     msg = "[1;";
                     msg += lights[1] ? 1:0;
                     msg += "]";
                     bt.send(msg);
+                    logFragment.log("Body split");
                     break;
 
                 case R.string.command_main:
-                    System.out.println("Main");
                     lights[2] = !lights[2];
                     msg = "[2;";
                     msg += lights[2] ? 1:0;
                     msg += "]";
                     bt.send(msg);
+                    logFragment.log("Main parachute released");
                     break;
 
                 case R.string.command_payload:
-                    System.out.println("Payload");
                     lights[3] = !lights[3];
                     msg = "[3;";
                     msg += lights[3] ? 1:0;
                     msg += "]";
                     bt.send(msg);
+                    logFragment.log("Payload deployed");
                     break;
             }
         }

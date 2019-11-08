@@ -2,6 +2,12 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <item android:id="@+id/bt_connect" android:icon="@drawable/baseline_bluetooth_black_48dp" android:title="Connect" app:showAsAction="always"/>
+    <item android:id="@+id/bt_connect" android:icon="@drawable/baseline_bluetooth_white_48dp" android:title="Connect" app:showAsAction="always"/>
+
+    <item android:id="@+id/bt_settings" android:title="Bluetooth Settings" app:showAsAction="never"/>
+
+    <item android:id="@+id/alt_settings" android:title="Set Altimeter" app:showAsAction="never"/>
+
+    <item android:id="@+id/clear_path" android:title="Clear trail" app:showAsAction="never"/>
 
 </menu>

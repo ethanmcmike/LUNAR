@@ -51,9 +51,8 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".activities.NDBActivity"
-            android:screenOrientation="portrait" />
+        <activity android:name=".activities.AltimeterActivity"/>
+
     </application>
 
 </manifest>

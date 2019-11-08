@@ -1,20 +1,22 @@
 #include <bmp085.h>
-//#include <SD.h>
+#include <SD.h>
 //#include <Servo.h>
 #include <SoftwareSerial.h>
 //#include <SPI.h>
 
-#define LOG_FILE_NAME   "Log.txt"       //TODO: change file name to date of record
+//TODO: change file names to include date of record
+#define LOG_FILE_NAME   "Log.txt"      //Records flight events (parachute deployment, commands received...)
+#define DATA_FILE_NAME  "Data.txt"      //Records flight data (altitude, temperature, acceleration...)
 
 #define PIN_LORA_RX     0
 #define PIN_LORA_TX     1
-#define PIN_GPS_TX      2
-#define PIN_GPS_RX      3
 #define PIN_SD          4
 #define PIN_DROGUE      5
 #define PIN_BODY        6
 #define PIN_CHUTE       7
 #define PIN_PAYLOAD     8
+#define PIN_GPS_TX      10
+#define PIN_GPS_RX      11
 #define PIN_BMP_SDA     A4
 #define PIN_BMP_SCL     A5
 
@@ -31,17 +33,24 @@
 #define COMMAND_PAYLOAD   3
 #define COMMAND_TRANSMIT  4
 
+SoftwareSerial gpsSerial(PIN_GPS_TX, PIN_GPS_RX);
+
 int index, delCountLora, delCountLunar, dataSize;
 String buffer;
 
-//File file;
+File logFile, dataFile;
 
 #define ALT_NUM         20            //Number of altimeter data points to average
 #define P0              101510.0      //Pressure at sea-level [Pa]
 
 int alt;
 float temp, lat, lon;
-long lastUpdate;
+long lastUpdate, lastMove;
+
+//GPS data
+char ch = "";
+String str = "";
+String targetStr = "GPGGA";
 
 void setup() {
 
@@ -65,13 +74,17 @@ void setup() {
   bmp085_init();    //TODO: fix blocking when BMP085 not connected
   
   //Initialize gps
+  gpsSerial.begin(9600);
 
-  //Initialize SD card
+//  //Initialize SD card
 //  SD.begin(PIN_SD);
-//  file = SD.open(LOG_FILE_NAME, FILE_WRITE);
+//  logFile = SD.open(LOG_FILE_NAME, FILE_WRITE);
+//  dataFile = SD.open(DATA_FILE_NAME, FILE_WRITE);
 }
 
 void loop() {
+
+  long now = millis();
 
   //Measure temperature
   temp = bmp085Temp();
@@ -82,17 +95,12 @@ void loop() {
   alt = ((ALT_NUM-1)*alt + tempAlt) / ALT_NUM;
   
   //Read location
-  lat = 0;
-  lon = 0;
-
-  //Read time
-  int hour = 0;
-  int min = 0;
-  int sec = 0;
-  int msec = 0;
+  getLatLon();
+//  lat = 10;
+//  lon = 10;
   
   //Store time, altitude, location on SD
-//  long now = millis();
+  
 //  if(now - lastTransmit > (float)1000/RATE){
 //    lastUpdate = now;
 //    storeData(hour, min, sec, msec, temp, alt, lat, lon);
@@ -265,22 +273,39 @@ void sendData(int receiverId, float temp, int alt, float lat, float lon){
   Serial.println(msg);
 }
 
+String getTime(){
+  //Use GPS data to get time
+  return "10:12:31";
+}
+
+//Stores flight events on SD card
+void log(String msg){
+  if(logFile){
+    logFile.print(getTime());
+    logFile.print("\t");
+    logFile.println(msg);
+
+    //Ensure data is saved to SD
+    logFile.flush();
+  }
+}
+
+//Stores flight data on SD card
 void storeData(int hour, int min, int sec, int msec, float temp, int alt, float lat, float lon){
-//  if(file){
-//    file.print(hour);
-//    file.print(":");
-//    file.print(min);
-//    file.print(":");
-//    file.print(sec);
-//    file.print("\t");
-//    file.print(temp);
-//    file.print("\t");
-//    file.println(alt);
-//    file.print("\t");
-//    file.print(lat);
-//    file.print("\t");
-//    file.println(lon);
-//  }
+  if(dataFile){
+    dataFile.print(getTime());
+    dataFile.print("\t");
+    dataFile.print(temp);
+    dataFile.print("\t");
+    dataFile.print(alt);
+    dataFile.print("\t");
+    dataFile.print(lat);
+    dataFile.print("\t");
+    dataFile.println(lon);
+
+    //Ensure data is saved to SD
+    dataFile.flush();
+  }
 }
 
 boolean apogee(){
@@ -289,20 +314,62 @@ boolean apogee(){
 
 //Will deploy drogue parachute
 void triggerDrogue(boolean state){
+  log("Drogue parachute deployed");
   digitalWrite(PIN_DROGUE, state);
 }
 
 //Will separate rocket into two halves
 void triggerBody(boolean state){
+  log("Body split");
   digitalWrite(PIN_BODY, state);
 }
 
 //Will deploy main parachute
 void triggerMain(boolean state){
+  log("Main parachute deployed");
   digitalWrite(PIN_CHUTE, state);
 }
 
 //Will activate a solenoid to release payload
 void triggerPayload(boolean state){
+  log("Payload released");
   digitalWrite(PIN_PAYLOAD, state);
+}
+
+void getLatLon(){
+  
+  while(gpsSerial.available()){
+    
+    ch = gpsSerial.read();
+
+    if(ch == '\n'){
+
+      if(targetStr.equals(str.substring(1, 6))){
+        
+        int first = str.indexOf(",");
+        int two = str.indexOf(",", first+1);
+        int three = str.indexOf(",", two+1);
+        int four = str.indexOf(",", three+1);
+        int five = str.indexOf(",", four+1);
+        
+        String Lat = str.substring(two+1, three);
+        String Long = str.substring(four+1, five);
+
+        String Lat1 = Lat.substring(0, 2);
+        String Lat2 = Lat.substring(2);
+
+        String Long1 = Long.substring(0, 3);
+        String Long2 = Long.substring(3);
+
+        double LatF = Lat1.toDouble() + Lat2.toDouble()/60;
+        float LongF = Long1.toFloat() + Long2.toFloat()/60;
+
+        lat = LatF;
+        lon = LongF;
+      }
+      str = "";
+    }else{
+      str += ch;
+    }
+  }
 }

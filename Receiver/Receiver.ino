@@ -19,7 +19,9 @@
 #define COMMAND_PING      4
 
 #define ROCKET_ID   2
+
 #define PING_RATE   2   //Rate to request data from rocket [Hz]
+#define TIMEOUT     2000
 long now, lastUpdate;
 
 //Flags
@@ -67,7 +69,7 @@ void loop() {
     }
   
     //Send to rocket if available and not already waiting for response
-    else if(now - lastUpdate >= (float)10){
+    else{
       lastUpdate = now;
       waiting = true;
       sendRocket("4");
@@ -75,6 +77,9 @@ void loop() {
   }
 }
 
+//Parses data from the rocket given a single byte at a time
+//Input format: Address, Data Size, Temperature, Altitude, Latitude, Longitude
+//Output format: Temperature, Altitude, Latitude, Longitude
 //Example data: "+RCV=2,27,13.2;203;172.11451;12.21451,-99,40";
 //Passes to handle(): "13.2;203;172.11451;12.21451"
 void parseRocket(char c){
@@ -112,7 +117,6 @@ void parseRocket(char c){
 
       //Send data through bluetooth
       if(delCount == 3){
-        
         if(buffer.length() == dataSize){
           sendBT(buffer);
           waiting = false;
@@ -127,8 +131,8 @@ void parseRocket(char c){
     
     //Add character to buffer
     else if(buffer.length() <= 256){
-      if(isDigit(c) || c == DEL_LUNAR || c == '.') {
-          buffer += c;
+      if(isDigit(c) || c == DEL_LUNAR || c == '.' || c == '-') {
+        buffer += c;
       }
     }
 
@@ -138,6 +142,7 @@ void parseRocket(char c){
   }
 }
 
+//Parses data from the Android given a single byte at a time
 void parseBT(char c){
 
   if(c == START){
@@ -145,7 +150,6 @@ void parseBT(char c){
   }
 
   else if(c == STOP){
-//    sendRocket(bufferBT);
     command = bufferBT;
     commandReady = true;
     bufferBT = "";

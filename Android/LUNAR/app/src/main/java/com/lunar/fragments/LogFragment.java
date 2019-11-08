@@ -47,28 +47,13 @@ public class LogFragment extends Fragment {
         logList.setAdapter(adapter);
     }
 
-    public void receive(){
-        items.add(new LogItem(LogItem.EventType.RECEIVED));
-        update();
-    }
-
-    public void send(){
-        items.add(new LogItem(LogItem.EventType.SENT));
-        update();
-    }
-
-    public void connect(){
-        items.add(new LogItem(LogItem.EventType.CONNECTED));
-        update();
-    }
-
-    public void disconnect(){
-        items.add(new LogItem(LogItem.EventType.DISCONNECTED));
-        update();
-    }
-
     private void update(){
         if(adapter != null)
             adapter.notifyDataSetChanged();
+    }
+
+    public void log(String msg){
+        items.add(new LogItem(msg));
+        update();
     }
 }
