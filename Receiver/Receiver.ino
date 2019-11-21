@@ -1,164 +1,210 @@
+#include <Parser.h>
 #include <SoftwareSerial.h>
-//#include <Parser.h>
+#include <SmartBuffer.h>
+#include <Timeout.h>
 
-#define LORA_TX     0
-#define LORA_RX     1
-#define BT_TX       2
-#define BT_RX       3
+//Pins
+#define PIN_LORA_TX     0
+#define PIN_LORA_RX     1
+#define PIN_BT_TX       2
+#define PIN_BT_RX       3
+#define PIN_LED_TX      4
 
-#define KEY         "+RCV="
-#define START       '['
-#define STOP        ']'
-#define DEL_LORA    ','
-#define DEL_LUNAR   ';'
-
+//Command IDs
 #define COMMAND_DROGUE    0
 #define COMMAND_BODY      1
 #define COMMAND_MAIN      2
 #define COMMAND_PAYLOAD   3
 #define COMMAND_PING      4
 
-#define ROCKET_ID   2
+//Radio addresses
+#define RECEIVER_ADDR     1
+#define ROCKET_ADDR       2
 
-#define PING_RATE   2   //Rate to request data from rocket [Hz]
-#define TIMEOUT     2000
-long now, lastUpdate;
+#define PING_RATE   2         //Rate to request data from rocket [Hz]
+#define TIMEOUT     5000
+
+//Parsing
+#define KEY_OK                "+OK"
+#define KEY_SEND              "AT+SEND="
+#define KEY_RCV               "+RCV="
+#define KEY_START             '['
+#define KEY_STOP              ']'
+#define DEL                   ';'
+#define DEL_LORA              ','
+#define BUFFER_SIZE_ROCKET    5
+#define BUFFER_SIZE_BT        5
+
+//Function declarations
+void receiveRocket(String*, int);
+void receiveBt(String*, int);
+
+//Buffers
+SmartBuffer okBuffer(KEY_OK);
+
+String rocketBuffer[BUFFER_SIZE_ROCKET];
+int rocketSlots[BUFFER_SIZE_ROCKET] = {1, 3, 1000, 4, 1};
+Parser rocketParser(KEY_RCV, BUFFER_SIZE_ROCKET, rocketBuffer, DEL_LORA, rocketSlots, receiveRocket);
+
+String btBuffer[BUFFER_SIZE_ROCKET];
+int btSlots[BUFFER_SIZE_ROCKET] = {1, 3, 1000, 4, 1};
+Parser btParser(KEY_START, BUFFER_SIZE_BT, btBuffer, DEL, btSlots, receiveBt);
+
+//Timing
+Timeout timeout(TIMEOUT);
 
 //Flags
-String command;
-boolean commandReady, waiting;
+String msg, command;
+boolean msgReady, commandReady, waiting;
 
-SoftwareSerial bt(BT_TX, BT_RX);
+SoftwareSerial bt(PIN_BT_TX, PIN_BT_RX);
 
-int index, delCount, transmitterId, dataSize;
-String buffer, bufferBT;
-int indexBT;
+//Stats testing
+int numTimeouts;
+int numTransmit;
 
 void setup() {
-  
+
+  //Initialize pins
+  pinMode(PIN_LED_TX, OUTPUT);
+
+  //Initialize communication
   Serial.begin(9600);
   bt.begin(9600);
 
+  //Allow radio/bluetooth to power up
+  delay(1000);
+
   //Initialize LoRa
-  delay(1000);
-  Serial.println("AT+IPR=9600");
-  delay(1000);
-  Serial.println("AT+PARAMETER=10,7,1,7");
+  Serial.println("AT+PARAMETER=10,7,1,7");    //Short range, fast
+//  Serial.println("AT+PARAMETER=12,5,1,10");      //Long range, slow
+  delay(10);
+  Serial.println("AT+ADDRESS=" + String(RECEIVER_ADDR));
 }
 
 void loop() {
 
-  //Receive data from rocket
-  if(Serial.available()){
-    parseRocket(Serial.read());
+  long now = millis();
+
+  //Send rocket data request as quickly as possible
+  if((!waiting && okBuffer.full()) || timeout.expired()){    
+
+    //Stats
+    if(timeout.expired()){
+      numTimeouts++;
+    }
+
+    numTransmit++;
+
+    String stats = "Timed-out: ";
+    stats += String(numTimeouts);
+    stats += " out of ";
+    stats += String(numTransmit);
+    bt.println(stats);
+
+    
+    Serial.println("AT+SEND=2,1,4");
+//    bt.println(timeout.get());
+    timeout.reset();
+    okBuffer.reset();
+    waiting = true;
+    digitalWrite(PIN_LED_TX, HIGH);
+  }
+
+  //Listen to radio input
+  while(Serial.available()){
+
+    char c = Serial.read();
+
+//    bt.print(c);
+
+    //Listen for KEY_OK after send
+    okBuffer.put(c);
+
+    if(okBuffer.full()){
+      digitalWrite(PIN_LED_TX, LOW);
+    }
+
+    //Listen for data
+    rocketParser.put(c);
   }
 
   //Receive command from Android
   if(bt.available()){
-    parseBT(bt.read());
+    
+//    parseBT(bt.read());
   }
 
-  now = millis();
+  //Send data
+  if(!Serial.available()){
 
-  //Send rocket a command
-  if(!waiting || now - lastUpdate > 2000){
-    
+    //Send message to bluetooth
+    if(msgReady){
+      
+      sendBT(msg);
+
+      waiting = false;
+      msgReady = false;
+    }
+
+    //Send command to rocket
     if(commandReady){
-      sendRocket(command);
+
       commandReady = false;
     }
-  
-    //Send to rocket if available and not already waiting for response
-    else{
-      lastUpdate = now;
-      waiting = true;
-      sendRocket("4");
-    }
   }
 }
 
-//Parses data from the rocket given a single byte at a time
-//Input format: Address, Data Size, Temperature, Altitude, Latitude, Longitude
-//Output format: Temperature, Altitude, Latitude, Longitude
-//Example data: "+RCV=2,27,13.2;203;172.11451;12.21451,-99,40";
-//Passes to handle(): "13.2;203;172.11451;12.21451"
-void parseRocket(char c){
+////Parses data from the Android given a single byte at a time
+//void parseBT(char c){
+//
+//  if(c == START){
+//    bufferBT = "";
+//  }
+//
+//  else if(c == STOP){
+//    command = bufferBT;
+//    commandReady = true;
+//    bufferBT = "";
+//  }
+//
+//  else if(bufferBT.length() <= 256){
+//    if(isDigit(c) || c == DEL_LUNAR || c == '.'){
+//      bufferBT += c;
+//    }
+//  }
+//}
 
-  //Validating data with key
-  if(index < strlen(KEY)){
-    
-    if(c == KEY[index]){
-      index++;
-    }
+void receiveRocket(String* in, int size){
   
-    else{
-        reset();
-    }
-  }
-
-  //Already received key
-  else {
-
-    if(c == DEL_LORA){
-      
-      delCount++;
-
-      //Read transmitter id
-      if(delCount == 1){
-        transmitterId = buffer.toInt();
-        buffer = "";
-      }
-  
-      //Read data size
-      if(delCount == 2){
-        dataSize = buffer.toInt();
-        buffer = "";
-      }
-
-      //Send data through bluetooth
-      if(delCount == 3){
-        if(buffer.length() == dataSize){
-          sendBT(buffer);
-          waiting = false;
-          reset();
-        }
-        
-        else {
-          reset();
-        }
-      }
-    }
+  if(size >= BUFFER_SIZE_ROCKET){
     
-    //Add character to buffer
-    else if(buffer.length() <= 256){
-      if(isDigit(c) || c == DEL_LUNAR || c == '.' || c == '-') {
-        buffer += c;
-      }
-    }
+    String addr = in[0];
+    int dataSize = in[1].toInt();
+    String data = in[2];
+    
+    msg = data;
 
-    else {
-      reset();
-    }
+    msgReady = true;
   }
 }
 
-//Parses data from the Android given a single byte at a time
-void parseBT(char c){
+void receiveBt(String* in, int size){
+  
+  if(size >= BUFFER_SIZE_BT){
+    
+    String addr = in[0];
+    String dataSize = in[1];
+    String data = in[2];
 
-  if(c == START){
-    bufferBT = "";
-  }
-
-  else if(c == STOP){
-    command = bufferBT;
+    command = String(KEY_SEND);
+    command += ROCKET_ADDR;
+    command += DEL_LORA;
+    command += dataSize;
+    command += DEL_LORA;
+    command += data;
+    
     commandReady = true;
-    bufferBT = "";
-  }
-
-  else if(bufferBT.length() <= 256){
-    if(isDigit(c) || c == DEL_LUNAR || c == '.'){
-      bufferBT += c;
-    }
   }
 }
 
@@ -168,30 +214,22 @@ void parseBT(char c){
 //Example data output: "[2;13.2;203;172.11451;12.21451]"
 void sendBT(String data){
   
-  String msg = String(START);
-  msg += transmitterId;
-  msg += DEL_LUNAR;
+  String msg = String(KEY_START);
+  msg += ROCKET_ADDR;             //TODO - remove ADDR from both here and Android code
+  msg += DEL;
   msg += data;
-  msg += STOP;
-  
+  msg += KEY_STOP;
   bt.println(msg);
 }
 
 void sendRocket(String data){
   
   String msg = "AT+SEND=";
-  msg += ROCKET_ID;
+  msg += ROCKET_ADDR;
   msg += DEL_LORA;
   msg += String(data.length());
   msg += DEL_LORA;
   msg += data;
   
   Serial.println(msg);
-}
-
-void reset(){
-  buffer = "";
-  index = 0;
-  delCount = 0;
-  dataSize = 0;
 }
