@@ -3,42 +3,34 @@
 #include <SD.h>
 #include <SmartBuffer.h>
 #include <SoftwareSerial.h>
-//#include <SPI.h>
 
-//TODO: change file names to include date of record
-#define LOG_FILE_NAME   "Log.txt"       //Records flight events (parachute deployment, commands received...)
-#define DATA_FILE_NAME  "Data.txt"      //Records flight data (altitude, temperature, acceleration...)
-
+//Pins
 #define PIN_LORA_RX       0
 #define PIN_LORA_TX       1
-#define PIN_LED_TX        9
+#define PIN_BT_TX         2
+#define PIN_BT_RX         3
 #define PIN_SD            4
 #define PIN_DROGUE        5
 #define PIN_BODY          6
 #define PIN_CHUTE         7
 #define PIN_PAYLOAD       8
+#define PIN_LED_TX        9
 #define PIN_GPS_TX        10
 #define PIN_GPS_RX        11
 #define PIN_BMP_SDA       A4
 #define PIN_BMP_SCL       A5
 
-#define BT_TX       2
-#define BT_RX       3
+//Files
+//TODO: change file names to include date of record
+#define LOG_FILE_NAME   "Log.txt"       //Records flight events (parachute deployment, commands received...)
+#define DATA_FILE_NAME  "Data.txt"      //Records flight data (altitude, temperature, acceleration...)
+#define RECORD_RATE       2             //Rate to store data on SD card [Hz]
 
-#define DEL_LORA          ','
-#define DEL_LUNAR         ';'
-
+//Radio addresses
 #define RECEIVER_ADDR     1
 #define ROCKET_ADDR       2
 
-#define RECORD_RATE       2     //Rate to store data on SD card [Hz]
-  
-#define ID_COMMAND        0
-#define ID_STATUS         1
-
-#define KEY_RCV          "+RCV="
-#define KEY_OK           "+OK"
-
+//Command IDs
 #define COMMAND_DROGUE    0
 #define COMMAND_BODY      1
 #define COMMAND_MAIN      2
@@ -53,15 +45,38 @@ enum Command{
   TRIGGER_PAYLOAD
 };
 
-SoftwareSerial gpsSerial(PIN_GPS_TX, PIN_GPS_RX);
-SoftwareSerial bt(BT_TX, BT_RX);
+//Parsing
+#define KEY_OK           "+OK"
+#define KEY_SEND              "AT+SEND="
+#define KEY_RCV          "+RCV="
+#define DEL_LORA          ','
+#define DEL               ';'
+#define ID_COMMAND        0
+#define ID_STATUS         1
+#define BUFFER_SIZE       5
 
+//OK Buffer
+SmartBuffer okBuffer(KEY_OK);
+
+//Function declarations
+void handle(String* data, int size);
+
+//Buffers
+String buffer[BUFFER_SIZE];
+int slotSize[BUFFER_SIZE] = {1, 3, 1000, 4, 1};
+Parser parser(KEY_RCV, BUFFER_SIZE, buffer, DEL_LORA, slotSize, handle);
+
+//Communication
+SoftwareSerial gpsSerial(PIN_GPS_TX, PIN_GPS_RX);
+SoftwareSerial bt(PIN_BT_TX, PIN_BT_RX);
+
+//Files
 File logFile, dataFile;
 
 #define ALT_NUM         20            //Number of altimeter data points to average
 #define P0              102010.0      //Pressure at sea-level [Pa]
 
-int alt;
+int state, alt;
 float temp, lat, lon;
 long lastUpdate, lastMove, lastStore;
 int hour, min, sec, msec;
@@ -71,21 +86,13 @@ char ch = "";
 String str = "";
 String targetStr = "GPGGA";
 
-//OK Buffer
-SmartBuffer okBuffer(KEY_OK), rcvBuffer(KEY_RCV);
-boolean sending;
-boolean commandReady;
-
-int size = 5;
-String buffer[5];
-int slotSize[5] = {1, 3, 1000, 4, 1};
-void handle(String* data, int size);
-Parser parser(KEY_RCV, 5, buffer, ',', slotSize, handle);
-
 long txTime;
 int timeout = 5000;
 
-boolean waiting, msgReady;
+//boolean waiting;
+
+char command;
+boolean msgReady;
 
 void setup() {
 
@@ -107,8 +114,8 @@ void setup() {
   Serial.begin(9600);
   Serial.println("AT+PARAMETER=10,7,1,7");    //Short range, fast
 //  Serial.println("AT+PARAMETER=12,5,1,10");      //Long range, slow
-  delay(10);
-  Serial.println("AT+ADDRESS=" + String(ROCKET_ADDR));
+//  delay(100);
+//  Serial.println("AT+ADDRESS=" + String(ROCKET_ADDR));
 
   //Initialize BMP (barometer/thermometer/accelerometer)
   bmp085_init();    //TODO: fix blocking when BMP085 not connected
@@ -154,7 +161,7 @@ void loop() {
 
     if(okBuffer.full() || now - txTime > timeout){
       okBuffer.reset();
-      waiting = false;
+//      waiting = false;
       txTime = now;
       digitalWrite(PIN_LED_TX, LOW);
     }
@@ -165,12 +172,22 @@ void loop() {
     parser.put(c);
   }
 
-  if(msgReady && !Serial.available()){
-    sendData(RECEIVER_ADDR);
-//    Serial.println("AT+SEND=1,5,abcde");
-    waiting = true;
-    msgReady = false;
+  //Respond to radio commands
+  if(msgReady){
+
+    //Send flight data
+    if(command == '4'){
+      sendData();
+    }
+
+    //Feedback command
+    else{
+      send(String(command));
+    }
+
     digitalWrite(PIN_LED_TX, HIGH);
+    okBuffer.reset();
+    msgReady = false;
   }
 }
 
@@ -268,15 +285,6 @@ String getTime(){
   return time;
 }
 
-void resetOk(){
-  okBuffer.reset();
-  sending = false;
-}
-
-void reset(){
-  parser.reset();
-}
-
 //Will handle commands received from ground
 void handleData(String data, int numChunks){
 
@@ -289,13 +297,14 @@ void handleData(String data, int numChunks){
     
     char c = data[index++];
     
-    while(c != DEL_LUNAR && index <= data.length()){      
+    while(c != DEL && index <= data.length()){      
       chunks[i] += c;
       c = data[index++];
     }
   }
 
   //First chunk is command id
+  command = chunks[0].charAt(0);
   int commandId = chunks[0].toInt();
 
   //Execute command based on id
@@ -303,35 +312,44 @@ void handleData(String data, int numChunks){
 
     case COMMAND_TRANSMIT:
       if(numChunks == 1){
-        sendData(RECEIVER_ADDR);
+//        sendData(RECEIVER_ADDR);
+        msgReady = true;
       }
       break;
     
     case COMMAND_DROGUE:
-      if(numChunks == 2){
-        boolean state = chunks[1].equals("1");
+      if(numChunks == 1){
+//        boolean state = chunks[1].equals("1");
+        boolean state = 1;
         triggerDrogue(state);
+        msgReady = true;
       }
       break;
 
     case COMMAND_BODY:
-      if(numChunks == 2){
-        boolean state = chunks[1].equals("1");
+      if(numChunks == 1){
+//        boolean state = chunks[1].equals("1");
+        boolean state = 1;
         triggerBody(state);
+        msgReady = true;
       }
       break;
 
     case COMMAND_MAIN:
-      if(numChunks == 2){
-        boolean state = chunks[1].equals("1");
+      if(numChunks == 1){
+//        boolean state = chunks[1].equals("1");
+        boolean state = 1;
         triggerMain(state);
+        msgReady = true;
       }
       break;
 
     case COMMAND_PAYLOAD:
-      if(numChunks == 2){
-        boolean state = chunks[1].equals("1");
+      if(numChunks == 1){
+//        boolean state = chunks[1].equals("1");
+        boolean state = 1;
         triggerPayload(state);
+        msgReady = true;
       }
       break;
 
@@ -340,28 +358,43 @@ void handleData(String data, int numChunks){
   }
 }
 
-//Sends data over radio to specified receiver
-void sendData(int receiverId){
-
-  sending = true;
-  
-  String data;
-  data += String(temp, 1);
-  data += DEL_LUNAR;
-  data += String(alt);
-  data += DEL_LUNAR;
-  data += String(lat, 5);
-  data += DEL_LUNAR;
-  data += String(lon, 5);
-
-  String msg = "AT+SEND=";
-  msg += receiverId;
+void send(String data){
+  String msg = String(KEY_SEND);
+  msg += RECEIVER_ADDR;
   msg += DEL_LORA;
-  msg += data.length();
+  msg += String(data.length());
   msg += DEL_LORA;
   msg += data;
-
   Serial.println(msg);
+}
+
+//Sends data over radio to specified receiver
+void sendData(){
+
+  int dataSize = 11;
+
+  char data[dataSize];
+  memcpy(&data[0], &state, 1);
+  memcpy(&data[1], &alt, 2);
+  memcpy(&data[3], &lat, 4);
+  memcpy(&data[7], &lon, 4);
+
+  String msg = "AT+SEND=";
+  msg += RECEIVER_ADDR;
+  msg += DEL_LORA;
+  msg += dataSize;
+  msg += DEL_LORA;
+////  msg += "abcdefghijk";
+
+//  int msgSize = strlen(KEY_SEND) + strlen(RECEIVER_ADDR) + strlen(DEL_LORA)*2 + dataSize;
+//  char msg[] = "AT+SEND=1,11,aaabbbcccdd";
+
+  Serial.print(msg);
+  for(int i=0; i<11; i++){
+    Serial.print(data[i]);
+  }
+
+  Serial.println();
 }
 
 //Stores flight events on SD card
@@ -404,8 +437,22 @@ void triggerPayload(boolean state){
   digitalWrite(PIN_PAYLOAD, state);
 }
 
-void handle(String* data, int size){
-  if(!waiting){
-    msgReady = true;
+void handle(String* in, int size){
+
+  if(size >= BUFFER_SIZE){
+
+    //Assuming sender address is RECEIVER_ADDR
+
+    String data = in[2];
+
+    //Count number of chunks
+    int numChunks = 1;
+    for(int i=0; i<data.length(); i++){
+      if(data.charAt(i) == DEL){
+        numChunks++;
+      }
+    }
+
+    handleData(data, numChunks);
   }
 }
