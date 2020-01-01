@@ -22,7 +22,8 @@
 #define ROCKET_ADDR       2
 
 #define PING_RATE         2         //Rate to request data from rocket [Hz]
-#define TIMEOUT           3000
+//#define TIMEOUT           20000
+#define TIMEOUT           5000
 
 //Parsing
 #define KEY_OK                "+OK"
@@ -76,8 +77,8 @@ void setup() {
 
   //Initialize LoRa
   Serial.println("AT+PARAMETER=10,7,1,7");    //Short range, fast
-//  Serial.println("AT+PARAMETER=12,5,1,10");      //Long range, slow
-//  delay(10);
+//  Serial.println("AT+PARAMETER=12,3,1,12");      //Long range, slow
+  delay(100);
 //  Serial.println("AT+ADDRESS=" + String(RECEIVER_ADDR));
 }
 
