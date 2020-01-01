@@ -17,7 +17,7 @@ import com.lunar.R;
 import com.lunar.models.Aircraft;
 import com.lunar.models.MainVM;
 import com.lunar.utils.BTController;
-import com.lunar.utils.DataListener;
+import com.lunar.interfaces.DataListener;
 import com.lunar.views.AircraftInfoView;
 import com.lunar.views.ArrowView;
 
@@ -125,7 +125,7 @@ public class MainNavActivity extends AppCompatActivity {
         }
     }
 
-    private class AircraftInfoReceiver extends DataListener {
+    private class AircraftInfoReceiver implements DataListener {
 
         char start = '[';
         char end = ']';

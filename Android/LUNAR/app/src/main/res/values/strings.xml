@@ -1,5 +1,8 @@
 <resources>
+
     <string name="app_name">LUNAR</string>
+    <string name="activity_main">LUNAR</string>
+    <string name="activity_altimeter">Set Altimeter</string>
 
     //Timeline events
     <string-array name="timeline_events">
@@ -22,5 +25,10 @@
     <string name="command_body">Body Split</string>
     <string name="command_main">Main Parachute</string>
     <string name="command_payload">Payload Release</string>
+
+    <string-array name="altimeter_units">
+        <item>inHG</item>
+        <item>hPa</item>
+    </string-array>
 
 </resources>

@@ -1,160 +1,207 @@
+#include <ParserC.h>
 #include <SoftwareSerial.h>
-//#include <Parser.h>
+#include <SmartBuffer.h>
+#include <Timeout.h>
 
-#define LORA_TX     0
-#define LORA_RX     1
-#define BT_TX       2
-#define BT_RX       3
+//Pins
+#define PIN_LORA_TX     0
+#define PIN_LORA_RX     1
+#define PIN_BT_TX       2
+#define PIN_BT_RX       3
+#define PIN_LED_TX      4
 
-#define KEY         "+RCV="
-#define START       '['
-#define STOP        ']'
-#define DEL_LORA    ','
-#define DEL_LUNAR   ';'
-
+//Command IDs
 #define COMMAND_DROGUE    0
 #define COMMAND_BODY      1
 #define COMMAND_MAIN      2
 #define COMMAND_PAYLOAD   3
 #define COMMAND_PING      4
 
-#define ROCKET_ID   2
-#define PING_RATE   2   //Rate to request data from rocket [Hz]
-long now, lastUpdate;
+//Radio addresses
+#define RECEIVER_ADDR     1
+#define ROCKET_ADDR       2
+
+#define PING_RATE         2         //Rate to request data from rocket [Hz]
+//#define TIMEOUT           20000
+#define TIMEOUT           5000
+
+//Parsing
+#define KEY_OK                "+OK"
+#define KEY_SEND              "AT+SEND="
+#define KEY_RCV               "+RCV="
+#define KEY_START             "["
+#define KEY_STOP              "]"
+#define DEL                   ';'
+#define DEL_LORA              ','
+#define BUFFER_SIZE_ROCKET    5
+#define BUFFER_SIZE_BT        2
+
+//Function declarations
+void receiveRocket(char**, int, int*);
+void receiveBt(char**, int, int*);
+
+//Buffers
+SmartBuffer okBuffer(KEY_OK);
+
+int rocketSlots[BUFFER_SIZE_ROCKET] = {1, 3, 100, 4, 1};
+ParserC rocketParser(KEY_RCV, BUFFER_SIZE_ROCKET, DEL_LORA, rocketSlots, receiveRocket);
+
+int btSlots[BUFFER_SIZE_BT] = {1, 1};
+ParserC btParser(KEY_START, BUFFER_SIZE_BT, DEL, btSlots, receiveBt);
+
+//Timing
+Timeout timeout(TIMEOUT);
 
 //Flags
-String command;
-boolean commandReady, waiting;
+boolean waiting;
+char command;           //TODO - change to queue of commands
+boolean commandReady;   //TODO - Will become !commandQueueEmpty
 
-SoftwareSerial bt(BT_TX, BT_RX);
+SoftwareSerial bt(PIN_BT_TX, PIN_BT_RX);
 
-int index, delCount, transmitterId, dataSize;
-String buffer, bufferBT;
-int indexBT;
+//Stats testing
+int numTimeouts;
+int numTransmit;
 
 void setup() {
-  
+
+  //Initialize pins
+  pinMode(PIN_LED_TX, OUTPUT);
+
+  //Initialize communication
   Serial.begin(9600);
   bt.begin(9600);
 
+  //Allow radio/bluetooth to power up
+  delay(1000);
+
   //Initialize LoRa
-  delay(1000);
-  Serial.println("AT+IPR=9600");
-  delay(1000);
-  Serial.println("AT+PARAMETER=10,7,1,7");
+  Serial.println("AT+PARAMETER=10,7,1,7");    //Short range, fast
+//  Serial.println("AT+PARAMETER=12,3,1,12");      //Long range, slow
+  delay(100);
+//  Serial.println("AT+ADDRESS=" + String(RECEIVER_ADDR));
 }
 
 void loop() {
 
-  //Receive data from rocket
-  if(Serial.available()){
-    parseRocket(Serial.read());
-  }
+  long now = millis();
 
-  //Receive command from Android
+  //First priority:
+  //Listen for bluetooth data
   if(bt.available()){
-    parseBT(bt.read());
+
+    byte c = bt.read();
+    
+    btParser.put(c);
   }
 
-  now = millis();
+  //Listen to radio data
+  if(Serial.available()){
 
-  //Send rocket a command
-  if(!waiting || now - lastUpdate > 2000){
-    
-    if(commandReady){
-      sendRocket(command);
-      commandReady = false;
+    char c = Serial.read();
+
+    //Listen for KEY_OK after send
+    okBuffer.put(c);
+
+    if(okBuffer.full()){
+      digitalWrite(PIN_LED_TX, LOW);
     }
+
+    //Listen for data from rocket
+    rocketParser.put(c);
+  }
+
+  //Set command to first in command queue
+  //If no command from BT, send data request command
+  command = commandReady ? command : '4';
   
-    //Send to rocket if available and not already waiting for response
-    else if(now - lastUpdate >= (float)10){
-      lastUpdate = now;
-      waiting = true;
-      sendRocket("4");
+  //Send rocket commands as quickly as possible
+  if((!waiting && okBuffer.full()) || timeout.expired()){
+
+    //////Stats
+    if(timeout.expired()){
+      numTimeouts++;
     }
+
+    numTransmit++;
+
+    String stats = "Timed-out: ";
+    stats += String(numTimeouts);
+    stats += " out of ";
+    stats += String(numTransmit);
+    bt.println(stats);
+    bt.println((long)timeout.get());
+    ///////
+
+    digitalWrite(PIN_LED_TX, HIGH);
+    
+    sendRocket(String(command));
+
+    okBuffer.reset();
+    timeout.reset();
+    waiting = true;
   }
 }
 
-//Example data: "+RCV=2,27,13.2;203;172.11451;12.21451,-99,40";
-//Passes to handle(): "13.2;203;172.11451;12.21451"
-void parseRocket(char c){
-
-  //Validating data with key
-  if(index < strlen(KEY)){
-    
-    if(c == KEY[index]){
-      index++;
-    }
+void receiveRocket(char** in, int size, int* sizes){
   
-    else{
-        reset();
-    }
-  }
+  if(size >= BUFFER_SIZE_ROCKET){
+    
+    String addr = String((char*)in[0]);
+    int dataSize = sizes[2];
+    char* data = (char*)in[2];
 
-  //Already received key
-  else {
+    //Assuming addr is rocket address..
 
-    if(c == DEL_LORA){
+    //Command feedback
+    if(dataSize == 1){
       
-      delCount++;
-
-      //Read transmitter id
-      if(delCount == 1){
-        transmitterId = buffer.toInt();
-        buffer = "";
-      }
-  
-      //Read data size
-      if(delCount == 2){
-        dataSize = buffer.toInt();
-        buffer = "";
-      }
-
-      //Send data through bluetooth
-      if(delCount == 3){
-        
-        if(buffer.length() == dataSize){
-          sendBT(buffer);
-          waiting = false;
-          reset();
-        }
-        
-        else {
-          reset();
-        }
-      }
-    }
-    
-    //Add character to buffer
-    else if(buffer.length() <= 256){
-      if(isDigit(c) || c == DEL_LUNAR || c == '.') {
-          buffer += c;
+      if(command == data[0]){
+        waiting = false;
+        commandReady = false;
       }
     }
 
-    else {
-      reset();
+    //Data received
+    else{
+
+      //Send data to bluetooth
+      int state = data[0];
+      int alt = *((int*)((byte*)(&data[1])));
+      float lat = *((float*)((byte*)(&data[3])));
+      float lon = *((float*)((byte*)(&data[7])));
+
+      String msg = "";
+      msg += String(23.4);    //TODO - remove temp from format
+      msg += DEL;
+      msg += String(alt);
+      msg += DEL;
+      msg += String(lat, 7);
+      msg += DEL;
+      msg += String(lon, 7);
+
+      sendBt(msg);
+      
+      waiting = false;
     }
   }
 }
 
-void parseBT(char c){
+void receiveBt(char** in, int size, int* sizes){
 
-  if(c == START){
-    bufferBT = "";
-  }
-
-  else if(c == STOP){
-//    sendRocket(bufferBT);
-    command = bufferBT;
+//  for(int i=0; i<size; i++){
+//    char* chunk = in[i];
+//
+//    for(int j=0; j<sizes[i]; j++){
+//      bt.print(chunk[j]);
+//    }
+//    bt.println();
+//  }
+  
+  if(size >= BUFFER_SIZE_BT){
+    char* chunk = in[0];
+    command = chunk[0];         //Command ID
     commandReady = true;
-    bufferBT = "";
-  }
-
-  else if(bufferBT.length() <= 256){
-    if(isDigit(c) || c == DEL_LUNAR || c == '.'){
-      bufferBT += c;
-    }
   }
 }
 
@@ -162,32 +209,24 @@ void parseBT(char c){
 //Example data input: "13.2;203;172.11451;12.21451"
 //Data output format: "[trandmitterId;temp;alt;lat;lon]"
 //Example data output: "[2;13.2;203;172.11451;12.21451]"
-void sendBT(String data){
+void sendBt(String data){
   
-  String msg = String(START);
-  msg += transmitterId;
-  msg += DEL_LUNAR;
+  String msg = String(KEY_START);
+  msg += ROCKET_ADDR;             //TODO - remove ADDR from both here and Android code
+  msg += DEL;
   msg += data;
-  msg += STOP;
-  
+  msg += KEY_STOP;
+
   bt.println(msg);
 }
 
 void sendRocket(String data){
   
-  String msg = "AT+SEND=";
-  msg += ROCKET_ID;
-  msg += DEL_LORA;
-  msg += String(data.length());
-  msg += DEL_LORA;
-  msg += data;
-  
-  Serial.println(msg);
-}
-
-void reset(){
-  buffer = "";
-  index = 0;
-  delCount = 0;
-  dataSize = 0;
+  String cmd = String(KEY_SEND);
+  cmd += ROCKET_ADDR;
+  cmd += DEL_LORA;
+  cmd += String(data.length());
+  cmd += DEL_LORA;
+  cmd += data;
+  Serial.println(cmd);
 }

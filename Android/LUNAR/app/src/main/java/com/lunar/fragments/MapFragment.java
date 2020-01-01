@@ -2,40 +2,31 @@ package com.lunar.fragments;
 
 import android.Manifest;
 import android.content.DialogInterface;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.location.Location;
-import android.location.LocationListener;
-import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
-import android.support.v4.app.Fragment;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AlertDialog;
-import android.util.Log;
 import android.view.View;
-import android.widget.Toast;
 
-import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
-import com.google.android.gms.maps.MapView;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
-import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
-import com.google.android.gms.tasks.OnSuccessListener;
 
 import java.util.ArrayList;
-import java.util.List;
 
 public class MapFragment extends SupportMapFragment implements OnMapReadyCallback{
 
@@ -78,11 +69,22 @@ public class MapFragment extends SupportMapFragment implements OnMapReadyCallbac
 
         this.map = map;
 
+        SharedPreferences settings = getActivity().getSharedPreferences("MAP_CAMERA", 0);
+        float lat = settings.getFloat("lat", 0);
+        float lon = settings.getFloat("lon", 0);
+        float zoom = settings.getFloat("zoom", 0);
+
+        LatLng pos = new LatLng(lat, lon);
+
+        if(lat != 0 && lon != 0 && zoom != 0){
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(pos, zoom));
+        }
+
         //Add existing marker and path to map
         int numPoints = points.size();
         if(numPoints > 0){
             rocketMarker = map.addMarker(rocketMarkerOpt);
-            rocketMarker.setPosition(points.get(numPoints-1));
+            rocketMarker.setPosition(points.get(numPoints - 1));
             rocketPath = map.addPolyline(rocketPathOpt);
             rocketPath.setPoints(points);
         }
@@ -94,45 +96,45 @@ public class MapFragment extends SupportMapFragment implements OnMapReadyCallbac
         map.setOnMyLocationButtonClickListener(onMyLocationButtonClickListener);
         map.setOnMyLocationClickListener(onMyLocationClickListener);
         enableMyLocationIfPermitted();
-
-//        //Initialize Google Play Services
-//        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-//            if (ContextCompat.checkSelfPermission(getContext(),
-//                    Manifest.permission.ACCESS_FINE_LOCATION)
-//                    == PackageManager.PERMISSION_GRANTED) {
-//                //Location Permission already granted
-//                buildGoogleApiClient();
-//                map.setMyLocationEnabled(true);
-//            } else {
-//                //Request Location Permission
-//                checkLocationPermission();
-//            }
-//        }
-//        else {
-//            buildGoogleApiClient();
-//            map.setMyLocationEnabled(true);
-//        }
     }
 
-    public void moveRocket(float lat, float lon){
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+
+        CameraPosition camPos = map.getCameraPosition();
+        float lat = (float)camPos.target.latitude;
+        float lon = (float)camPos.target.longitude;
+        float zoom = camPos.zoom;
+
+        SharedPreferences settings = getActivity().getSharedPreferences("MAP_CAMERA", 0);
+        SharedPreferences.Editor editor = settings.edit();
+        editor.putFloat("lat", lat);
+        editor.putFloat("lon", lon);
+        editor.putFloat("zoom", zoom);
+        editor.commit();
+    }
+
+    public void update(float lat, float lon){
         points.add(new LatLng(lat, lon));
-        update();
+
+        if(map != null) {
+            draw();
+        }
     }
 
-    private void update(){
+    private void draw(){
 
         int numPoints = points.size();
 
         //First point added
-        if(numPoints == 1){
+        if (numPoints == 1 && rocketMarker == null) {
             rocketMarkerOpt.position(points.get(0));
             rocketMarker = map.addMarker(rocketMarkerOpt);
             rocketPath = map.addPolyline(rocketPathOpt);
-        }
-
-        else if(numPoints > 0){
+        } else if (numPoints > 0) {
             //Place marker on latest pos
-            rocketMarker.setPosition(points.get(numPoints-1));
+            rocketMarker.setPosition(points.get(numPoints - 1));
             //Add existing points to rocket path
             rocketPath.setPoints(points);
         }
@@ -176,22 +178,23 @@ public class MapFragment extends SupportMapFragment implements OnMapReadyCallbac
 //        }
 //    }
 
-    private GoogleMap.OnMyLocationButtonClickListener onMyLocationButtonClickListener =
-        new GoogleMap.OnMyLocationButtonClickListener() {
-            @Override
-            public boolean onMyLocationButtonClick() {
+    private GoogleMap.OnMyLocationButtonClickListener onMyLocationButtonClickListener = new GoogleMap.OnMyLocationButtonClickListener() {
 
-                int numPoints = points.size();
+        @Override
+        public boolean onMyLocationButtonClick() {
 
-                if(numPoints > 0){
-                    LatLng pos = points.get(numPoints-1);
-                    map.moveCamera(CameraUpdateFactory.newLatLng(pos));
-                }
+            //Center on rocket
+            int numPoints = points.size();
 
-//                Toast.makeText(getContext(), "My location not added yet...", Toast.LENGTH_LONG).show();
-                return false;
+            if(numPoints > 0){
+                LatLng pos = points.get(numPoints-1);
+                map.moveCamera(CameraUpdateFactory.newLatLng(pos));
+                map.animateCamera(CameraUpdateFactory.newLatLngZoom(pos, 16.0f));
             }
-        };
+
+            return false;
+        }
+    };
 
     private GoogleMap.OnMyLocationClickListener onMyLocationClickListener =
             new GoogleMap.OnMyLocationClickListener() {
@@ -455,4 +458,9 @@ public class MapFragment extends SupportMapFragment implements OnMapReadyCallbac
 //    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
 //
 //    }
+
+    public void clearPath(){
+        points.clear();
+        rocketPath.setPoints(points);
+    }
 }

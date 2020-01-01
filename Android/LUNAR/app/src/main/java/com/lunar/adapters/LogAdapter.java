@@ -46,28 +46,28 @@ public class LogAdapter extends ArrayAdapter<LogItem> {
 
         time.setText(item.time);
 
-        String eventText = "";
+//        String eventText = "";
+//
+//        switch(item.event){
+//
+//            case CONNECTED:
+//                eventText = getContext().getResources().getString(R.string.log_connect);
+//                break;
+//
+//            case DISCONNECTED:
+//                eventText = getContext().getResources().getString(R.string.log_disconnect);
+//                break;
+//
+//            case RECEIVED:
+//                eventText = getContext().getResources().getString(R.string.log_receive);
+//                break;
+//
+//            case SENT:
+//                eventText = getContext().getResources().getString(R.string.log_send);
+//                break;
+//        }
 
-        switch(item.event){
-
-            case CONNECTED:
-                eventText = getContext().getResources().getString(R.string.log_connect);
-                break;
-
-            case DISCONNECTED:
-                eventText = getContext().getResources().getString(R.string.log_disconnect);
-                break;
-
-            case RECEIVED:
-                eventText = getContext().getResources().getString(R.string.log_receive);
-                break;
-
-            case SENT:
-                eventText = getContext().getResources().getString(R.string.log_send);
-                break;
-        }
-
-        text.setText(eventText);
+        text.setText(item.desc);
 
         return convertView;
     }
